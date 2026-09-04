@@ -6,19 +6,27 @@ from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
+# 품목별 이미지 URL 매핑
+ITEM_IMAGES = {
+    "초콜릿": "https://images.unsplash.com/photo-1548907040-4baa42d10919?w=500&auto=format&fit=crop&q=80",
+    "초코케이크": "https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=500&auto=format&fit=crop&q=80",
+    "초코과자": "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=500&auto=format&fit=crop&q=80",
+    "초코 폭포": "https://images.unsplash.com/photo-1511381939415-e44015466834?w=500&auto=format&fit=crop&q=80"
+}
+
 ROUNDS = [
-    {"round": 1, "item": "초콜릿", "point": 1, "revealTotal": False},
-    {"round": 2, "item": "초코케이크", "point": 3, "revealTotal": False},
-    {"round": 3, "item": "초코과자", "point": 2, "revealTotal": True},
-    {"round": 4, "item": "초코 폭포", "point": 4, "revealTotal": False},
-    {"round": 5, "item": "초콜릿", "point": 1, "revealTotal": False},
-    {"round": 6, "item": "초코과자", "point": 2, "revealTotal": True},
-    {"round": 7, "item": "초콜릿", "point": 1, "revealTotal": False},
-    {"round": 8, "item": "초코케이크", "point": 3, "revealTotal": False},
-    {"round": 9, "item": "초코과자", "point": 2, "revealTotal": True},
-    {"round": 10, "item": "초코과자", "point": 2, "revealTotal": False},
-    {"round": 11, "item": "초콜릿", "point": 1, "revealTotal": False},
-    {"round": 12, "item": "초코 폭포", "point": 4, "revealTotal": False},
+    {"round": 1, "item": "초콜릿", "point": 1, "revealTotal": False, "img": ITEM_IMAGES["초콜릿"]},
+    {"round": 2, "item": "초코케이크", "point": 3, "revealTotal": False, "img": ITEM_IMAGES["초코케이크"]},
+    {"round": 3, "item": "초코과자", "point": 2, "revealTotal": True, "img": ITEM_IMAGES["초코과자"]},
+    {"round": 4, "item": "초코 폭포", "point": 4, "revealTotal": False, "img": ITEM_IMAGES["초코 폭포"]},
+    {"round": 5, "item": "초콜릿", "point": 1, "revealTotal": False, "img": ITEM_IMAGES["초콜릿"]},
+    {"round": 6, "item": "초코과자", "point": 2, "revealTotal": True, "img": ITEM_IMAGES["초코과자"]},
+    {"round": 7, "item": "초콜릿", "point": 1, "revealTotal": False, "img": ITEM_IMAGES["초콜릿"]},
+    {"round": 8, "item": "초코케이크", "point": 3, "revealTotal": False, "img": ITEM_IMAGES["초코케이크"]},
+    {"round": 9, "item": "초코과자", "point": 2, "revealTotal": True, "img": ITEM_IMAGES["초코과자"]},
+    {"round": 10, "item": "초코과자", "point": 2, "revealTotal": False, "img": ITEM_IMAGES["초코과자"]},
+    {"round": 11, "item": "초콜릿", "point": 1, "revealTotal": False, "img": ITEM_IMAGES["초콜릿"]},
+    {"round": 12, "item": "초코 폭포", "point": 4, "revealTotal": False, "img": ITEM_IMAGES["초코 폭포"]},
 ]
 
 class GameRoom:
@@ -85,6 +93,8 @@ class GameRoom:
 
         await self.broadcast("ROUND_RESULT", {
             "round": r_data["round"],
+            "item": r_data["item"],
+            "img": r_data["img"],
             "point": r_data["point"],
             "maxBid": max_bid,
             "minBid": min_bid,
@@ -160,6 +170,11 @@ async def websocket_endpoint(ws: WebSocket, room_code: str):
                 else:
                     await end_game_flow(room)
 
+            elif action == "FORCE_END_GAME":
+                if room.timer_task and not room.timer_task.done():
+                    room.timer_task.cancel()
+                await end_game_flow(room)
+
     except WebSocketDisconnect:
         if joined_team and joined_team in room.student_ws:
             del room.student_ws[joined_team]
@@ -175,6 +190,7 @@ async def start_round_flow(room: GameRoom):
         "round": r_data["round"],
         "item": r_data["item"],
         "point": r_data["point"],
+        "img": r_data["img"],
         "teams": list(room.teams.keys())
     })
 
