@@ -230,4 +230,255 @@
         <h2 id="s-round-item" style="margin: 4px 0;">초콜릿</h2>
         <div style="font-size: 0.9rem; color: #666;">배점: <b id="s-round-pts">1</b>점</div>
         
-        <img id="s-round-img" class="item-image"
+        <img id="s-round-img" class="item-image" src="" alt="초코 상품" style="width: 140px; height: 140px;" />
+
+        <div class="timer-display" id="s-timer" style="font-size: 2.2rem;">02:00</div>
+      </div>
+      <div id="s-bid-form">
+        <label style="display: block; margin-bottom: 6px; font-weight: bold;">입찰 금액 입력 (무제한)</label>
+        <input type="number" id="s-bid-amount" placeholder="초코 화폐 단위를 입력" min="0" />
+        <button class="btn btn-gold" style="width: 100%;" onclick="submitBid()">입찰 제출하기</button>
+      </div>
+      <div id="s-bid-done" style="display: none; text-align: center; padding: 15px; background: #eafaf1; border-radius: 10px;">
+        <h3 style="color: var(--success);">입찰 완료!</h3>
+        <p style="margin-top: 6px;">결과 발표를 기다리는 중...</p>
+      </div>
+    </div>
+
+    <div id="s-result" style="display: none; text-align: center; padding: 15px 0;">
+      <h2 id="s-res-title">결과</h2>
+      <p id="s-res-desc" style="font-size: 1.1rem; margin: 12px 0;"></p>
+      <div style="background: var(--cream); padding: 12px; border-radius: 10px; text-align: left; line-height: 1.6;">
+        <div>우리 모둠 누적 점수: <b id="s-my-score">0</b>점</div>
+        <div>우리 모둠 누적 낙찰액: <b id="s-my-spent">0</b></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let role = null;
+    let roomCode = "";
+    let myTeamName = "";
+
+    function switchView(id) {
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+    }
+
+    function goHome() {
+      if (confirm("처음 화면으로 돌아가시겠습니까? 진행 중인 연결이 종료됩니다.")) {
+        if (ws) ws.close();
+        window.location.reload();
+      }
+    }
+
+    function confirmEndGame() {
+      if (confirm("정말로 경매를 즉시 조기 종료하고 현재까지의 최종 결과를 확인하시겠습니까?")) {
+        sendWS("FORCE_END_GAME", {});
+      }
+    }
+
+    function initWS(code, onOpenCallback) {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${proto}//${window.location.host}/ws/${code}`);
+      ws.onopen = onOpenCallback;
+      ws.onmessage = (e) => handleServerMsg(JSON.parse(e.data));
+      ws.onclose = () => {};
+    }
+
+    function sendWS(type, data) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type, ...data }));
+      }
+    }
+
+    function initTeacher() {
+      role = "teacher";
+      roomCode = Math.floor(1000 + Math.random() * 9000).toString();
+      initWS(roomCode, () => {
+        sendWS("INIT_TEACHER", {});
+        document.getElementById("t-room-code").textContent = roomCode;
+        switchView("view-teacher");
+      });
+    }
+
+    function joinStudent() {
+      const code = document.getElementById("join-code").value.trim();
+      const team = document.getElementById("join-team").value.trim();
+      if (!code || !team) return alert("코드와 모둠 이름을 모두 입력해 주세요.");
+      role = "student";
+      roomCode = code;
+      myTeamName = team;
+      initWS(roomCode, () => {
+        sendWS("JOIN_STUDENT", { teamName: myTeamName });
+        document.getElementById("s-team-name").textContent = myTeamName;
+        switchView("view-student");
+      });
+    }
+
+    function submitBid() {
+      const val = document.getElementById("s-bid-amount").value;
+      if (val === "" || Number(val) < 0) return alert("올바른 금액을 입력하세요.");
+      sendWS("SUBMIT_BID", { teamName: myTeamName, amount: Number(val) });
+      document.getElementById("s-bid-form").style.display = "none";
+      document.getElementById("s-bid-done").style.display = "block";
+    }
+
+    function handleServerMsg(msg) {
+      const { type, data } = msg;
+
+      if (type === "ERROR") return alert(data.message);
+
+      if (type === "UPDATE_LOBBY") {
+        document.getElementById("t-team-count").textContent = data.teams.length;
+        document.getElementById("t-teams-list").innerHTML = data.teams
+          .map(t => `<div class="team-card">${t}</div>`).join("");
+      }
+
+      if (type === "ROUND_START") {
+        if (role === "teacher") {
+          document.getElementById("t-lobby").style.display = "none";
+          document.getElementById("t-result").style.display = "none";
+          document.getElementById("t-round").style.display = "block";
+          document.getElementById("t-round-idx").textContent = `Round ${data.round} / 12`;
+          document.getElementById("t-round-item").textContent = data.item;
+          document.getElementById("t-round-point").textContent = `+${data.point}점`;
+          document.getElementById("t-round-img").src = data.img;
+          updateTeacherBids(data.teams, []);
+        } else {
+          document.getElementById("s-wait").style.display = "none";
+          document.getElementById("s-result").style.display = "none";
+          document.getElementById("s-bid").style.display = "block";
+          document.getElementById("s-bid-form").style.display = "block";
+          document.getElementById("s-bid-done").style.display = "none";
+          document.getElementById("s-round-num").textContent = `Round ${data.round}`;
+          document.getElementById("s-round-item").textContent = data.item;
+          document.getElementById("s-round-pts").textContent = data.point;
+          document.getElementById("s-round-img").src = data.img;
+          document.getElementById("s-bid-amount").value = "";
+        }
+      }
+
+      if (type === "BIDS_STATUS") {
+        if (role === "teacher") updateTeacherBids(data.allTeams, data.submittedTeams);
+      }
+
+      if (type === "TIMER_TICK") {
+        const min = String(Math.floor(data.remaining / 60)).padStart(2, '0');
+        const sec = String(data.remaining % 60).padStart(2, '0');
+        const text = `${min}:${sec}`;
+        if (role === "teacher") document.getElementById("t-timer").textContent = text;
+        if (role === "student") document.getElementById("s-timer").textContent = text;
+      }
+
+      if (type === "TIMER_STATE") {
+        if (role === "teacher") {
+          document.getElementById("t-pause-btn").textContent = data.isPaused ? "계속 진행" : "일시정지";
+        }
+      }
+
+      if (type === "ROUND_RESULT") {
+        if (role === "teacher") {
+          document.getElementById("t-round").style.display = "none";
+          document.getElementById("t-result").style.display = "block";
+          document.getElementById("t-result-img").src = data.img;
+          document.getElementById("t-result-content").innerHTML = `
+            <div>🎉 낙찰: <b>${data.highestTeams.join(", ")}</b> (${data.maxBid.toLocaleString()} 사용 / +${data.point}점)</div>
+            <div style="color: var(--danger); margin-top: 8px;">⚠️ 최저가 페널티(-1점): <b>${data.lowestTeams.join(", ")}</b> (${data.minBid.toLocaleString()})</div>
+          `;
+          const sumEl = document.getElementById("t-periodic-summary");
+          if (data.revealTotal) {
+            sumEl.style.display = "block";
+            sumEl.textContent = `📢 [누적 총액 공개] 모든 모둠 누적 낙찰액: ${data.totalSpentAll.toLocaleString()}`;
+          } else {
+            sumEl.style.display = "none";
+          }
+        } else {
+          document.getElementById("s-bid").style.display = "none";
+          document.getElementById("s-result").style.display = "block";
+          const isHigh = data.highestTeams.includes(myTeamName);
+          const isLow = data.lowestTeams.includes(myTeamName);
+          const tEl = document.getElementById("s-res-title");
+          const dEl = document.getElementById("s-res-desc");
+
+          if (isHigh) {
+            tEl.textContent = "🎉 낙찰 성공!";
+            tEl.style.color = "var(--choco-dark)";
+            dEl.innerHTML = `+${data.point}점 획득 (낙찰가: ${data.maxBid.toLocaleString()})`;
+          } else if (isLow) {
+            tEl.textContent = "⚠️ 최저가 감점(-1점)";
+            tEl.style.color = "var(--danger)";
+            dEl.textContent = "최저 입찰가로 1점이 감점되었습니다.";
+          } else {
+            tEl.textContent = "경매 종료";
+            tEl.style.color = "#666";
+            dEl.textContent = "낙찰되지 않았습니다.";
+          }
+
+          const myData = data.teamsData[myTeamName] || { score: 0, totalSpent: 0 };
+          document.getElementById("s-my-score").textContent = myData.score;
+          document.getElementById("s-my-spent").textContent = myData.totalSpent.toLocaleString();
+          document.getElementById("s-score-badge").textContent = `${myData.score}점`;
+        }
+      }
+
+      if (type === "GAME_OVER") {
+        if (role === "teacher") {
+          document.getElementById("t-lobby").style.display = "none";
+          document.getElementById("t-round").style.display = "none";
+          document.getElementById("t-result").style.display = "none";
+          document.getElementById("t-final").style.display = "block";
+          document.getElementById("t-final-winner").textContent = data.winner 
+            ? `👑 최종 우승: [ ${data.winner.name} ] (${data.winner.score}점 / 누적 ${data.winner.totalSpent.toLocaleString()})`
+            : "생존한 모둠이 없습니다.";
+
+          const tbody = document.getElementById("t-final-table");
+          tbody.innerHTML = "";
+          let rank = 1;
+          data.validTeams.forEach((t, i) => {
+            tbody.innerHTML += `
+              <tr class="${i === 0 ? 'winner' : ''}">
+                <td><b>${rank++}위</b></td><td>${t.name}</td><td><b>${t.score}점</b></td>
+                <td>${t.totalSpent.toLocaleString()}</td><td>생존</td>
+              </tr>`;
+          });
+          data.bankruptTeams.forEach(t => {
+            tbody.innerHTML += `
+              <tr class="bankrupt">
+                <td>-</td><td>${t.name}</td><td>${t.score}점</td>
+                <td>${t.totalSpent.toLocaleString()}</td><td><b>파산 (최다 지출 탈락)</b></td>
+              </tr>`;
+          });
+        } else {
+          document.getElementById("s-wait").style.display = "none";
+          document.getElementById("s-bid").style.display = "none";
+          document.getElementById("s-result").style.display = "block";
+          const isWin = data.winner && data.winner.name === myTeamName;
+          const isBankrupt = data.bankruptTeams.some(t => t.name === myTeamName);
+          const tEl = document.getElementById("s-res-title");
+          const dEl = document.getElementById("s-res-desc");
+
+          if (isWin) {
+            tEl.textContent = "🏆 우리 모둠 최종 우승!";
+            dEl.textContent = "축하합니다! 최고 점수로 승리했습니다.";
+          } else if (isBankrupt) {
+            tEl.textContent = "💥 파산 탈락";
+            dEl.textContent = "총 사용 금액 1위로 탈락했습니다.";
+          } else {
+            tEl.textContent = "게임 종료";
+            dEl.textContent = "선생님 화면의 최종 순위를 확인하세요.";
+          }
+        }
+      }
+    }
+
+    function updateTeacherBids(all, submitted) {
+      document.getElementById("t-round-bids-status").innerHTML = all.map(t => {
+        const done = submitted.includes(t);
+        return `<div class="team-card ${done ? 'done' : ''}">${t}<br>${done ? '제출 완료' : '입찰 중...'}</div>`;
+      }).join("");
+    }
+  </script>
+</body>
+</html>
