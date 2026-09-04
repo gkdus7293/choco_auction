@@ -238,4 +238,4 @@ HTML_CONTENT = """<!DOCTYPE html>
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${proto}//${window.location.host}/ws/${code}`);
       ws.onopen = onOpenCallback;
-      ws.onmessage = (e) => handleServerMsg(JSON.parse(
+      ws.onmessage = (e) => handleServerMsg(JSON.parse)
